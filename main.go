@@ -5,5 +5,5 @@ import (
 )
 
 func main() {
-	map_reduce.MapReduce(10)
+	map_reduce.MapReduce(10000)
 }
