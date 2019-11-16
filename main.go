@@ -1,7 +1,9 @@
 package main
 
-import "./election"
+import (
+	"./map_reduce"
+)
 
 func main() {
-	election.GoroutineTest()
+	map_reduce.MapReduce(10)
 }
