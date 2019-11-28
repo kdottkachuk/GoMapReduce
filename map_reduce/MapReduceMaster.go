@@ -29,7 +29,7 @@ func strToInt(str string) int {
 	return number
 }
 
-func MapReduce(maxLen int) {
+func MapReduce() {
 	cores := runtime.NumCPU()
 	fmt.Printf("This machine has %d CPU cores. \n", cores)
 	runtime.GOMAXPROCS(cores)
