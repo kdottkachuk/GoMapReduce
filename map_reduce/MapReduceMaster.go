@@ -29,16 +29,16 @@ func strToInt(str string) int {
 	return number
 }
 
-func MapReduce() {
+func MapReduce(chunksCount int, chunkSize int, parallel bool) int {
 	cores := runtime.NumCPU()
 	fmt.Printf("This machine has %d CPU cores. \n", cores)
 	runtime.GOMAXPROCS(cores)
 
-	csvfile, err := os.Open(FileName)
+	csvFile, err := os.Open(FileName)
 	handleError(err)
-	defer csvfile.Close()
+	defer csvFile.Close()
 
-	reader := csv.NewReader(csvfile)
+	reader := csv.NewReader(csvFile)
 	reader.FieldsPerRecord = -1
 
 	_, err = reader.Read()
@@ -50,54 +50,77 @@ func MapReduce() {
 		records = append(records, []election.ElectionRecord{})
 	}
 
-	nextCore := 0
+	var results []ResultType
+	resultChan := make(chan ResultType)
+	linearResults := []ResultType{}
+
+	chunkSize = chunkSize
+	rowCounter := 0
+	var chunk []election.ElectionRecord
+
+	go func() {
+		if parallel {
+			left := chunksCount
+			for {
+				results = append(results, <-resultChan)
+				left--
+				if left == 0 {
+					break
+				}
+			}
+			SumResults(results)
+		}
+	}()
+
 	for {
 		rawCsvRecord, err := reader.Read()
 		if err != nil {
-			break
+		} else {
+			rowCounter++
+			electionRecord := election.ElectionRecord{
+				Region:     rawCsvRecord[1],
+				Baburin:    strToInt(rawCsvRecord[3]),
+				Grudinin:   strToInt(rawCsvRecord[4]),
+				Jirinovsky: strToInt(rawCsvRecord[5]),
+				Putin:      strToInt(rawCsvRecord[6]),
+				Sobchak:    strToInt(rawCsvRecord[7]),
+				Suraykin:   strToInt(rawCsvRecord[8]),
+				Titov:      strToInt(rawCsvRecord[9]),
+				Yavlinskiy: strToInt(rawCsvRecord[22]),
+			}
+			chunk = append(chunk, electionRecord)
 		}
 
-		electionRecord := election.ElectionRecord{
-			Region:     rawCsvRecord[1],
-			Baburin:    strToInt(rawCsvRecord[3]),
-			Grudinin:   strToInt(rawCsvRecord[4]),
-			Jirinovsky: strToInt(rawCsvRecord[5]),
-			Putin:      strToInt(rawCsvRecord[6]),
-			Sobchak:    strToInt(rawCsvRecord[7]),
-			Suraykin:   strToInt(rawCsvRecord[8]),
-			Titov:      strToInt(rawCsvRecord[9]),
-			Yavlinskiy: strToInt(rawCsvRecord[22]),
+		if rowCounter == chunkSize || err != nil {
+			rowCounter = 0
+			chunksCount++
+
+			if parallel {
+				go func(resultChanIn chan ResultType, chunkIn []election.ElectionRecord) {
+					mapped := Map(chunkIn)
+					shuffled := Shuffle(mapped)
+					resultChanIn <- Reduce(shuffled)
+				}(resultChan, chunk)
+			} else {
+				mapped := Map(chunk)
+				shuffled := Shuffle(mapped)
+				linearResults = append(linearResults, Reduce(shuffled))
+			}
+
+			chunk = []election.ElectionRecord{}
 		}
 
-		records[nextCore] = append(records[nextCore], electionRecord)
-
-		nextCore++
-		if nextCore == 4 {
-			nextCore = 0
-		}
-	}
-
-	results := []ResultType{}
-	resultChan := make(chan ResultType)
-
-	for c := 0; c < cores; c++ {
-		recordsChunk := records[c]
-		go func(chan ResultType, []election.ElectionRecord) {
-			mapped := Map(recordsChunk)
-			shuffled := Shuffle(mapped)
-			resultChan <- Reduce(shuffled)
-		}(resultChan, recordsChunk)
-	}
-
-	left := cores
-	for {
-		results = append(results, <-resultChan)
-		left--
-		if left == 0 {
+		if err != nil {
 			break
 		}
 	}
-	SumResults(results)
+
+	if !parallel {
+		results = linearResults
+		SumResults(results)
+	}
+
+	return chunksCount
 }
 
 func Map(records []election.ElectionRecord) []election.ElectionRecord {
