@@ -12,8 +12,6 @@ import (
 
 type ResultType map[string]election.ElectionRecord
 
-const FileName = "voting_data_rus.csv"
-
 func handleError(err error) {
 	if err != nil {
 		fmt.Println(err)
@@ -38,6 +36,8 @@ func MapReduce(chunksCount int, chunkSize int, parallel bool, regionName string)
 	} else {
 		runtime.GOMAXPROCS(1)
 	}
+
+	FileName := os.Args[1]
 
 	csvFile, err := os.Open(FileName)
 	handleError(err)
