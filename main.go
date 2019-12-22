@@ -2,19 +2,19 @@ package main
 
 import (
 	"./map_reduce"
-	"fmt"
 	"time"
 )
 
 const recordsCount = 95_000
-
-const chunksCount = 4
+const parallel = true
+const chunksCount = 100
 const chunkSize = int(recordsCount / chunksCount)
+const regionName = "Калининградская область"
 
-func test(chunksCount int) time.Duration {
+func test() time.Duration {
 	start := time.Now()
 
-	map_reduce.MapReduce(chunksCount, chunkSize, false)
+	map_reduce.MapReduce(chunksCount, chunkSize, parallel, regionName)
 
 	t := time.Now()
 	elapsed := t.Sub(start)
@@ -22,5 +22,10 @@ func test(chunksCount int) time.Duration {
 }
 
 func main() {
-	fmt.Println(test(4).Milliseconds())
+	const attempts = 2
+	sumTime := time.Duration(0)
+	for i := 0; i < attempts; i++ {
+		sumTime += test()
+	}
+	//fmt.Println("Avg time is ", sumTime.Milliseconds()/attempts)
 }

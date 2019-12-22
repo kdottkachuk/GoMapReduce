@@ -3,6 +3,7 @@ package map_reduce
 import (
 	"../election"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -29,10 +30,14 @@ func strToInt(str string) int {
 	return number
 }
 
-func MapReduce(chunksCount int, chunkSize int, parallel bool) int {
+func MapReduce(chunksCount int, chunkSize int, parallel bool, regionName string) int {
 	cores := runtime.NumCPU()
-	fmt.Printf("This machine has %d CPU cores. \n", cores)
-	runtime.GOMAXPROCS(cores)
+	//fmt.Printf("This machine has %d CPU cores. \n", cores)
+	if parallel {
+		runtime.GOMAXPROCS(cores)
+	} else {
+		runtime.GOMAXPROCS(1)
+	}
 
 	csvFile, err := os.Open(FileName)
 	handleError(err)
@@ -44,33 +49,26 @@ func MapReduce(chunksCount int, chunkSize int, parallel bool) int {
 	_, err = reader.Read()
 	handleError(err)
 
-	var records [][]election.ElectionRecord
-
-	for c := 0; c < cores; c++ {
-		records = append(records, []election.ElectionRecord{})
-	}
-
 	var results []ResultType
 	resultChan := make(chan ResultType)
 	linearResults := []ResultType{}
 
-	chunkSize = chunkSize
 	rowCounter := 0
 	var chunk []election.ElectionRecord
 
-	go func() {
+	go func(resultchanIn chan ResultType) {
 		if parallel {
 			left := chunksCount
 			for {
-				results = append(results, <-resultChan)
+				results = append(results, <-resultchanIn)
 				left--
 				if left == 0 {
 					break
 				}
 			}
-			SumResults(results)
+			SumResults(results, regionName)
 		}
-	}()
+	}(resultChan)
 
 	for {
 		rawCsvRecord, err := reader.Read()
@@ -98,13 +96,11 @@ func MapReduce(chunksCount int, chunkSize int, parallel bool) int {
 			if parallel {
 				go func(resultChanIn chan ResultType, chunkIn []election.ElectionRecord) {
 					mapped := Map(chunkIn)
-					shuffled := Shuffle(mapped)
-					resultChanIn <- Reduce(shuffled)
+					resultChanIn <- Reduce(mapped)
 				}(resultChan, chunk)
 			} else {
 				mapped := Map(chunk)
-				shuffled := Shuffle(mapped)
-				linearResults = append(linearResults, Reduce(shuffled))
+				linearResults = append(linearResults, Reduce(mapped))
 			}
 
 			chunk = []election.ElectionRecord{}
@@ -117,17 +113,13 @@ func MapReduce(chunksCount int, chunkSize int, parallel bool) int {
 
 	if !parallel {
 		results = linearResults
-		SumResults(results)
+		SumResults(results, regionName)
 	}
 
 	return chunksCount
 }
 
-func Map(records []election.ElectionRecord) []election.ElectionRecord {
-	return records
-}
-
-func Shuffle(records []election.ElectionRecord) map[string][]election.ElectionRecord {
+func Map(records []election.ElectionRecord) map[string][]election.ElectionRecord {
 	mappedRecords := make(map[string][]election.ElectionRecord)
 	for _, record := range records {
 		mappedRecords[record.Region] = append(mappedRecords[record.Region], record)
@@ -168,7 +160,7 @@ func Reduce(mappedRecords map[string][]election.ElectionRecord) ResultType {
 	return result
 }
 
-func SumResults(results []ResultType) {
+func SumResults(results []ResultType, regionName string) {
 
 	finalResult := results[0]
 
@@ -189,5 +181,24 @@ func SumResults(results []ResultType) {
 		}
 	}
 
-	fmt.Println(finalResult["Калининградская область"])
+	result := finalResult[regionName]
+
+	//fmt.Println(result)
+
+	var inInterface map[string]int
+	inrec, _ := json.Marshal(result)
+	json.Unmarshal(inrec, &inInterface)
+
+	allCounts := 0
+	maxVoits := 0
+	maxVoitsName := "Not found"
+	for field, val := range inInterface {
+		allCounts += val
+		if val > maxVoits {
+			maxVoits = val
+			maxVoitsName = field
+		}
+	}
+
+	fmt.Println(regionName, "-", maxVoitsName, maxVoits, "of", allCounts, "(", 100*maxVoits/allCounts, "% )")
 }
